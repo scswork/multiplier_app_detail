@@ -4,7 +4,7 @@ from io import BytesIO
 import openpyxl
 
 # -------------------------------
-# Replace with your GitHub raw CSV URL
+# Replace with your new dataset raw GitHub CSV URL
 url = "https://raw.githubusercontent.com/scswork/multiplier_app/refs/heads/main/multiplier_2021_data.csv"
 # -------------------------------
 
@@ -16,18 +16,12 @@ st.title("Economic Impact Report")
 # Sidebar layout
 st.sidebar.header("Filters")
 
-# GEO filter (multiple select)
-geo_filter = st.sidebar.multiselect("Select Provinces (GEO)", options=sorted(df['GEO'].unique()), default=[])
-
-# Geographical coverage filter (single select)
-coverage_filter = st.sidebar.selectbox("Select Geographical Coverage", options=["All"] + sorted(df['Geographical coverage'].unique()))
-
-# CAPEX and OPEX dropdowns for industry selection
+# Industry filter (for CAPEX/OPEX selection)
 capex_industry = st.sidebar.selectbox("Select CAPEX Industry", options=df['Industry'].unique())
 opex_industry = st.sidebar.selectbox("Select OPEX Industry", options=df['Industry'].unique())
 
 # Type and Variable filters
-type_filter = st.sidebar.multiselect("Filter by Type", options=df['Multiplier type'].unique(), default=list(df['Multiplier type'].unique()))
+type_filter = st.sidebar.multiselect("Filter by Multiplier Type", options=df['Multiplier type'].unique(), default=list(df['Multiplier type'].unique()))
 variable_filter = st.sidebar.multiselect("Filter by Variable", options=df['Variable'].unique(), default=list(df['Variable'].unique()))
 
 st.sidebar.markdown("---")
@@ -48,7 +42,7 @@ edited_data = st.sidebar.data_editor(
     column_config={
         "Type": st.column_config.SelectboxColumn(
             "Type",
-            options=["CAPEX", "OPEX"],  # Dropdown options
+            options=["CAPEX", "OPEX"],
             default="CAPEX"
         )
     }
@@ -65,36 +59,30 @@ if st.button("Generate Report"):
     capex_total = edited_data.loc[edited_data['Type'] == "CAPEX", 'Value'].sum()
     opex_total = edited_data.loc[edited_data['Type'] == "OPEX", 'Value'].sum()
 
-    # Apply GEO and coverage filters
-    filtered_df = df.copy()
-    if geo_filter:
-        filtered_df = filtered_df[filtered_df['GEO'].isin(geo_filter)]
-    if coverage_filter != "All":
-        filtered_df = filtered_df[filtered_df['Geographical coverage'] == coverage_filter]
-
     # Filter database for selected industries
-    capex_db = filtered_df[filtered_df['Industry'] == capex_industry]
-    opex_db = filtered_df[filtered_df['Industry'] == opex_industry]
+    capex_db = df[df['Industry'] == capex_industry]
+    opex_db = df[df['Industry'] == opex_industry]
 
-    # Merge CAPEX and OPEX data
+    # Apply Type and Variable filters
+    capex_db = capex_db[(capex_db['Multiplier type'].isin(type_filter)) & (capex_db['Variable'].isin(variable_filter))]
+    opex_db = opex_db[(opex_db['Multiplier type'].isin(type_filter)) & (opex_db['Variable'].isin(variable_filter))]
+
+    # Merge CAPEX and OPEX datasets
     report = pd.merge(capex_db, opex_db, on=['Multiplier type', 'Variable'], suffixes=('_CAPEX', '_OPEX'))
-    report = report[(report['Multiplier type'].isin(type_filter)) & (report['Variable'].isin(variable_filter))]
 
     # Impact calculations
-    def calculate_impact(row, total, value_col):
+    report['CAPEX_Impact'] = report['VALUE_CAPEX'] * capex_total
+    report['OPEX_Impact'] = report['VALUE_OPEX'] * opex_total
+
+    # Format values for display
+    def format_value(row, col):
         if "Jobs" in row['Variable']:
-            return (row[value_col] * (total / 1e6))
+            return f"{int(row[col]):,}"
         else:
-            return row[value_col] * total
+            return f"${int(row[col]):,}"
 
-    report['CAPEX_Impact'] = report.apply(lambda r: calculate_impact(r, capex_total, 'VALUE_CAPEX'), axis=1)
-    report['OPEX_Impact'] = report.apply(lambda r: calculate_impact(r, opex_total, 'VALUE_OPEX'), axis=1)
-
-    # Format values
-    report['VALUE_CAPEX'] = report['VALUE_CAPEX'].round(4)
-    report['VALUE_OPEX'] = report['VALUE_OPEX'].round(4)
-    report['CAPEX_Impact'] = report.apply(lambda r: f"{int(r['CAPEX_Impact']):,}" if "Jobs" in r['Variable'] else f"${int(r['CAPEX_Impact']):,}", axis=1)
-    report['OPEX_Impact'] = report.apply(lambda r: f"{int(r['OPEX_Impact']):,}" if "Jobs" in r['Variable'] else f"${int(r['OPEX_Impact']):,}", axis=1)
+    report['CAPEX_Impact'] = report.apply(lambda r: format_value(r, 'CAPEX_Impact'), axis=1)
+    report['OPEX_Impact'] = report.apply(lambda r: format_value(r, 'OPEX_Impact'), axis=1)
 
     st.dataframe(report)
 
