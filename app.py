@@ -70,11 +70,19 @@ if st.button("Generate Report"):
     # Merge CAPEX and OPEX datasets
     report = pd.merge(capex_db, opex_db, on=['Multiplier type', 'Variable'], suffixes=('_CAPEX', '_OPEX'))
 
-    # Impact calculations
-    report['CAPEX_Impact'] = report['VALUE_CAPEX'] * capex_total
-    report['OPEX_Impact'] = report['VALUE_OPEX'] * opex_total
+    # ------- UPDATED: Divide Jobs by 1,000,000 -------
+    def calculate_impact(row, total, value_col):
+        if "Jobs" in row['Variable']:
+            return row[value_col] * (total / 1_000_000)
+        else:
+            return row[value_col] * total
+    # -------------------------------------------------
 
-    # Format values for display
+    # Apply updated impact calculation
+    report['CAPEX_Impact'] = report.apply(lambda r: calculate_impact(r, capex_total, 'VALUE_CAPEX'), axis=1)
+    report['OPEX_Impact'] = report.apply(lambda r: calculate_impact(r, opex_total, 'VALUE_OPEX'), axis=1)
+
+    # Formatting
     def format_value(row, col):
         if "Jobs" in row['Variable']:
             return f"{int(row[col]):,}"
